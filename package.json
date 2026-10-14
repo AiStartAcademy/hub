@@ -21,7 +21,8 @@
     "backfill:venue-rental-payments": "node --env-file=.env --import tsx scripts/backfill-venue-rental-payments.ts",
     "db:migrate:local": "DATABASE_URL=file:./dev.db npx prisma migrate dev --name add_lesson_media_and_quiz && npx prisma generate && npx prisma db push",
     "db:migrate": "npx prisma migrate dev --name init && npx prisma generate && npx prisma db push",
-    "filesTree": "tree -I node_modules > tree.txt"
+    "filesTree": "tree -I node_modules > tree.txt",
+    "test:isolated": "bun scripts/test-isolated.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",

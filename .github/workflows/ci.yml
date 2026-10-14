@@ -21,9 +21,11 @@ jobs:
           node-version: 20
           cache: npm
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
       - run: npm ci
       - run: npm run db:generate
       - run: npm run db:push -- --skip-generate
       - run: npx tsc --noEmit
-      - run: bun test tests/unit
+      - run: npm run test:isolated   # one process per test file; bun mock.module is process-wide
       - run: npm run build

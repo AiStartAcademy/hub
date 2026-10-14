@@ -54,7 +54,9 @@ npm run dev            # http://localhost:3000
 
 - `bun test tests/unit` runs the unit suite (bun is the runner; npm stays the package manager).
 - Write the test first for new behavior: one named test per success criterion, red before green.
-- `mock.module` mocks are process-wide in bun; reset them in each test file.
+- `mock.module` mocks are process-wide in bun, so a partial mock can leak into files that run
+  later. Spread the real module into partial mocks. CI runs `npm run test:isolated` (one process
+  per file); if a test passes there but fails under `bun test tests/unit`, a mock leaked.
 
 ## Task recipes
 
@@ -96,7 +98,7 @@ bun test tests/unit
 npm run build
 ```
 
-CI runs these three; `npm run build` is the real gate. `npm run lint` reports existing debt:
+CI runs these three (tests via `npm run test:isolated`); `npm run build` is the real gate. `npm run lint` reports existing debt:
 don't add new findings in the files you touch. Also exercise the affected flow by hand
 (`npm run dev` with the demo seed), and update the relevant `docs/features/*.md` in the same PR.
 

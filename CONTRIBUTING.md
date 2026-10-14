@@ -21,7 +21,7 @@ bun test tests/unit
 npm run build
 ```
 
-CI runs the same three. `npm run lint` reports existing debt; please don't add new findings in the
+CI runs the same checks, with tests isolated per file (`npm run test:isolated`). `npm run lint` reports existing debt; please don't add new findings in the
 files you touch. Using an AI coding agent? Point it at [AGENTS.md](./AGENTS.md).
 
 ## License
