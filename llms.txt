@@ -1,0 +1,59 @@
+# Hub
+
+> Open-source platform for running a cohort-based academy: an LMS (programs, cohorts, lessons, quizzes, certificates), a lead engine (onboarding quizzes, leads CRM, drip email/SMS, attribution), Stripe payments and memberships, and an operations back office (venue rentals, instructor scheduling, telephony, chat, content CMS). One Next.js 16 app with Prisma 6 on SQLite. AGPL-3.0.
+
+Rules for coding agents are in AGENTS.md. Academy-specific values live only in src/config/brand.ts, src/config/content.ts and src/config/catalog.ts. Run Prisma through `npm run db:*`; test with `bun test tests/unit`; the gate is `npm run build`.
+
+## Start here
+
+- [README](README.md): what the hub does, quickstart, rebranding, integrations, deployment
+- [AGENTS.md](AGENTS.md): rules, commands and task recipes for AI coding agents
+- [CONTRIBUTING](CONTRIBUTING.md): how to propose changes
+- [Docs index](docs/README.md): map of all documentation
+
+## Core docs
+
+- [Architecture](docs/ARCHITECTURE.md): one Next.js app, one SQLite file; how the LMS, lead engine and back office fit together
+- [Conventions](docs/CONVENTIONS.md): how code is written here, so new code reads like existing code
+- [Environment variables](docs/ENVIRONMENT.md): every variable, grouped by integration; only Core is required
+- [Local development](docs/LOCAL_DEVELOPMENT.md): run on your machine with no external services
+- [Deployment](docs/DEPLOYMENT.md): Docker image, start script, persistent SQLite, webhooks, cron runners
+- [Security architecture](docs/SECURITY.md): authentication, authorization, machine tokens, webhook verification
+- [MCP API](docs/MCP_API.md): authenticated internal API under /api/internal/mcp/* for AI assistants
+
+## Features
+
+- [Onboarding quizzes](docs/features/ONBOARDING.md): branching quizzes that segment visitors, capture leads and route them
+- [Leads CRM](docs/features/LEADS.md): internal lead store and pipeline
+- [Attribution](docs/features/ATTRIBUTION.md): UTM and ad click-id capture attached to leads
+- [Drip campaigns](docs/features/DRIP_CAMPAIGNS.md): scheduled multi-step email/SMS outreach, consent scopes, broadcasts
+- [Email tracking](docs/features/EMAIL_TRACKING.md): signed open and click instrumentation
+- [Transactional email](docs/features/TRANSACTIONAL_EMAIL.md): verification, invites, receipts and other system mail
+- [Lead 1:1 booking](docs/features/LEAD_BOOKING.md): closer availability and contact-specific booking links
+- [Payments](docs/features/PAYMENTS.md): Stripe Checkout for seats, self-paced courses and memberships; coupons; recovery
+- [Members area](docs/features/MEMBERS_AREA.md): tiered entitlements, /members, billing portal
+- [Course access](docs/features/COURSE_ACCESS.md): who can open a program, decided in checkProgramAccess()
+- [Public cohorts page](docs/features/COHORTS_PUBLIC.md): logged-out calendar of upcoming cohorts
+- [Public cohorts feed](docs/features/PUBLIC_COHORTS_FEED.md): read-only cross-origin JSON feed for a marketing site
+- [Certificates](docs/features/CERTIFICATES.md): HTML template → PDF, public verification
+- [Track record](docs/features/TRACK_RECORD.md): a learner's full history in one shape
+- [Human profiles](docs/features/HUMANS.md): canonical public instructor and mentor profiles
+- [User roles](docs/features/USER_ROLES.md): multiple roles per user and how checks work
+- [Views](docs/features/VIEWS.md): one domain object rendered for different audiences
+- [Integrations registry](docs/features/INTEGRATIONS.md): runtime-editable, encrypted keys and config
+- [Chat](docs/features/CHAT.md): Rocket.Chat-backed cohort and member chat
+- [Call transcripts](docs/features/CALL_TRANSCRIPTS.md): staff-visible transcripts on contact calls
+- [Vapi receptionist](docs/features/VAPI_RECEPTIONIST.md): optional after-hours AI voice agent
+- [Telephony](docs/features/TELEPHONY.md): Twilio browser softphone, inbound call routing chain, recordings, call logging
+- [Cohort messages](docs/features/COHORT_MESSAGES.md): cohort email and SMS blasts, SMS consent, opt-in confirmation, STOP handling
+- [Venue rentals](docs/features/VENUE_RENTALS.md): venue calendar, event pages, registrations and waivers, sign-then-pay rental agreements
+- [Instructor scheduling](docs/features/INSTRUCTOR_SCHEDULING.md): per-session proposals, tokenized confirm links, Calendar sync, reminders
+- [Session series](docs/features/SESSION_SERIES.md): shared recurring sessions attached to cohorts, with Zoom linkage
+- [Zoom recordings](docs/features/ZOOM_RECORDINGS.md): Zoom webhook importing cloud recordings as lessons
+- [Content CMS](docs/features/CONTENT_CMS.md): headless CMS and agent control plane for an external static site
+- [Analytics and SEO](docs/features/ANALYTICS_SEO.md): GTM, server-side conversions, metadata
+
+## Optional
+
+- [Security policy](SECURITY.md): how to report a vulnerability
+- [License](LICENSE): GNU AGPL v3

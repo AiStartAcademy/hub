@@ -1,0 +1,2098 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/client"
+}
+
+generator erd {
+  provider = "prisma-erd-generator"
+  output   = "./ERD.md"
+  theme    = "default"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Auth Models ───────────────────────────────────────────────────
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          String    @default("STUDENT") // STUDENT | TEAM_MEMBER | INSTRUCTOR | ADMIN — legacy primary role, kept for display/back-compat
+  roles         String    @default("[]") // JSON string[] of the same enum — the source of truth once populated; see src/lib/roles.ts
+  timezone      String    @default("UTC")
+  birthday      String? // ISO YYYY-MM-DD date-only string; timezone-safe
+  /// Controls whether this closer participates in browser-softphone simulring.
+  isAvailableForCalls Boolean @default(false)
+  bio           String? // User bio with rich text formatting
+  attribution   String? // JSON: captured UTM params + ad click ids at signup (first-touch)
+  stripeCustomerId String? @unique // Stripe Customer id (paid enrollments)
+  // Part B of the Recording and Media Release — OPTIONAL promotional use of likeness.
+  // null = never granted or since withdrawn, i.e. do-not-publish. Consent to *record*
+  // (Part A, required) is the UserConsent row for docKey "recording"; these are
+  // deliberately separate so declining marketing use never blocks enrollment.
+  marketingReleaseAt DateTime?
+  rocketchatId       String?   @unique
+  rocketchatUsername String?   @unique
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Public profile (Humans/Mentors/Instructors) — see docs/features/HUMANS.md
+  isMentor          Boolean @default(false)
+  profileVisibility String  @default("PRIVATE") // PRIVATE | PUBLIC | UNLISTED
+  slug              String? @unique // public /humans/{slug}
+  // Long-lived token for /instructor-schedule/{token} — the instructor's own view of
+  // every cohort they're teaching. Cross-cohort grain, unlike CohortInstructor.responseToken.
+  scheduleToken     String? @unique
+  /// Long-lived token for /book/{token} — the closer's public lead-booking page.
+  bookingToken      String? @unique
+  headline          String? // one-line title, e.g. "Founder & CEO, AI Automation Agency"
+  location           String?
+  languages          String? // comma-separated
+  socialLinks        String? // JSON {linkedin,youtube,x,site}
+  expertiseTags      String? // comma-separated, free-text (mirrors Cohort.tools)
+
+  accounts           Account[]
+  sessions           Session[]
+  enrollments        Enrollment[]
+  payments           Payment[]
+  programEnrollments ProgramEnrollment[]
+  groupMembers       GroupMember[]
+  taughtCohorts      Cohort[]               @relation("CohortInstructors")
+  submissions        AssessmentSubmission[]
+  lessonProgress     LessonProgress[]
+  reviews            CourseReview[]
+  instructorSlots    InstructorSlot[]       @relation("InstructorSlots")
+  studentBookings    OneOnOneBooking[]      @relation("StudentBookings")
+  instructorBookings OneOnOneBooking[]      @relation("InstructorBookings")
+  quizSubmissions    QuizSubmission[]
+  programAccess      ProgramAccess[]
+  certificates       Certificate[]
+  memberships        Membership[]
+  ownedCoupons       Coupon[]     @relation("CouponOwner")
+  portfolioItems     PortfolioItem[]
+  profileVideos      ProfileVideo[]
+  testimonials       Testimonial[]
+  cohortInstructorRecords CohortInstructor[] @relation("CohortInstructorRecords")
+  ledSessions             CohortSession[]    @relation("SessionInstructor")
+  podMembers              PodMember[]
+  coachedPods             Pod[]                  @relation("PodCoach")
+  milestoneAchievements   MilestoneAchievement[]
+  verifiedAchievements    MilestoneAchievement[] @relation("MilestoneVerifier")
+  consents                UserConsent[]
+  closerSlots             CloserSlot[]
+  leadSeries              SessionSeries[]        @relation("SeriesInstructor")
+  ledSeriesOccurrences    SeriesOccurrence[]     @relation("SeriesOccurrenceInstructor")
+}
+
+// ─── Student Consent ────────────────────────────────────────────────
+// Append-only record of which legal document, at which version, a user accepted.
+// A version bump writes a NEW row rather than mutating the old one, so we can always
+// reproduce what someone agreed to and when. Document text + versions live in
+// src/lib/legalDocs.ts and src/content/legal/*.md.
+//
+// Paid students are enrolled by the Stripe webhook with no browser present, so consent
+// cannot be collected at enrollment — it is enforced at access time in checkProgramAccess().
+model UserConsent {
+  id         String   @id @default(cuid())
+  userId     String
+  docKey     String // tos | privacy | conduct | recording | ai-ip | waiver — see LegalDocKey
+  version    String // the LEGAL_DOCS version string in force when accepted
+  acceptedAt DateTime @default(now())
+  ip         String? // first x-forwarded-for hop, "unknown" when absent
+  userAgent  String?
+  cohortId   String? // which enrollment prompted this acceptance, for context
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, docKey, version])
+  @@index([userId])
+  @@index([docKey, version])
+}
+
+model PortfolioItem {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  url       String
+  thumbnail String?
+  outcome   String? // 1-line outcome, e.g. "Built a VAPI voice agent that booked 200 calls/mo"
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ProfileVideo {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String?
+  url       String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Testimonial {
+  id           String   @id @default(cuid())
+  userId       String
+  quote        String
+  authorName   String
+  authorRole   String?
+  authorAvatar String?
+  source       String   @default("manual") // manual | review
+  reviewId     String? // CourseReview.id, when source = "review"
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── LMS Models ────────────────────────────────────────────────────
+model Cohort {
+  id            String    @id @default(cuid())
+  pods          Pod[]
+  title         String
+  slug          String?   @unique // clean public URL, auto-generated from title (e.g. "ai-automation-agency-bootcamp")
+  description   String?
+  cover         String? // URL to cover image
+  status        String    @default("DRAFT") // DRAFT | ENROLLMENT | IN_PROGRESS | COMPLETE | ARCHIVED
+  deliveryMode  String    @default("ONLINE") // INPERSON | ONLINE | HYBRID
+  location      String?
+  zoomLink      String?
+  zoomMeetingId String?  // Unique identifier for Zoom recurring meeting
+  startDate     DateTime?
+  endDate       DateTime?
+  startTime     String?   // e.g. "10:00am" — cohort-level daily start (sessions may override)
+  endTime       String?   // e.g. "5:00pm"
+  timezone      String    @default("PT")
+  tools         String?   // free-text tag list, comma-separated (e.g. "Claude Code, n8n, VAPI")
+  certificate   Boolean   @default(true) // whether this cohort awards a completion certificate
+  leadMagnet    Boolean   @default(false) // free lead-magnet event (e.g. Q&A): email-capture register, no checkout
+  leadMagnetCta String?   // optional CTA label for the lead magnet (default "Save your spot — free")
+  memberEventType String? // null = not mirrored into Member Calls; otherwise a MemberEvent type such as WEEKLY_QA — the cohort's sessions then show up on /members/calls
+  rawProgramId  String?   @unique
+  rawProgram    Program?  @relation("CohortRawProgram", fields: [rawProgramId], references: [id], onDelete: SetNull)
+  rocketchatGroupId  String?   @unique
+  // The RC group NAME as created. Persisted so renaming the cohort does not
+  // re-derive a different channel and orphan the existing chat history.
+  rocketchatChannelName String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+
+  programs              Program[]
+  sessions              CohortSession[]
+  enrollments           Enrollment[]
+  groups                Group[]
+  instructors           User[]                 @relation("CohortInstructors")
+  submissions           AssessmentSubmission[]
+  lessonProgress        LessonProgress[]
+  onboardingTagMappings OnboardingTagCohort[]
+  onboardingResponses   OnboardingResponse[]
+  learningPaths         LearningPath[]
+  materials             CohortMaterial[]       // Opposite relation field for CohortMaterial
+  certificates          Certificate[]
+  payments              Payment[]
+  instructorRecords     CohortInstructor[]
+  instructorOutreaches  InstructorOutreach[]
+  seriesLinks           SessionSeriesCohort[]
+}
+
+model CohortMaterial {
+  id        String   @id @default(cuid())
+  cohortId  String
+  cohort    Cohort   @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  
+  title     String
+  type      String   
+  url       String   
+  order     Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([cohortId])
+}
+
+model Group {
+  id            String   @id @default(cuid())
+  cohortId      String
+  name          String
+  inPerson      Boolean  @default(false)
+  price         Float    @default(0)
+  seats         Int      @default(50)
+  allowOneOnOne Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  cohort   Cohort            @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  members  GroupMember[]
+  slots    InstructorSlot[]
+  bookings OneOnOneBooking[]
+  payments Payment[]
+}
+
+model GroupMember {
+  id        String   @id @default(cuid())
+  groupId   String
+  userId    String
+  createdAt DateTime @default(now())
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+}
+
+model CohortSession {
+  id               String   @id @default(cuid())
+  cohortId         String
+  title            String
+  description      String?
+  date             DateTime
+  startTime        String // e.g. "10:00 AM"
+  endTime          String // e.g. "12:00 PM"
+  timezone         String   @default("PST")
+  status           String   @default("upcoming") // upcoming | live | completed
+  meetingLink      String?
+  // Set when this session's join link was borrowed from another cohort's session
+  // (admin "From another cohort"). meetingLink still holds the resolved URL, so a
+  // SetNull here only drops the provenance, never the link itself.
+  linkedSessionId  String?
+  recordingLink    String?
+  zoomOccurrenceId String?
+  order            Int      @default(0)
+  instructorId     String? // optional lead instructor for this session
+  // Google Calendar mirror of this session (created once instructors confirm) —
+  // same field trio as VenueEvent, see src/lib/googleCalendar.ts.
+  gcalEventId      String?
+  gcalSyncError    String?
+  gcalSyncedAt     DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  cohort        Cohort          @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  linkedSession CohortSession?  @relation("SessionLink", fields: [linkedSessionId], references: [id], onDelete: SetNull)
+  linkedFrom    CohortSession[] @relation("SessionLink")
+  instructor User?      @relation("SessionInstructor", fields: [instructorId], references: [id], onDelete: SetNull)
+  resources  Resource[]
+  instructorResponses CohortSessionInstructorResponse[]
+  assignments         SessionAssignment[]
+
+  // Zoom's occurrence_id is the occurrence's start-time epoch timestamp — NOT globally
+  // unique across different meetings that happen to share a session start moment (this
+  // was previously a bare @unique on zoomOccurrenceId, which let two cohorts' meetings
+  // with identical schedules silently steal each other's session row on sync).
+  @@unique([cohortId, zoomOccurrenceId])
+  @@index([linkedSessionId])
+}
+
+// ─── Shared Session Series ──────────────────────────────────────────
+// A recurring session that is NOT owned by a single cohort — the daily check-in
+// call that serves every currently-running day cohort at once, on one Zoom link.
+//
+// Deliberately a separate table from CohortSession rather than a many-to-many on it:
+// syncCohortSessions() deletes any cohort session row whose Zoom occurrence has gone
+// and re-derives title/order from list index, so a shared row living there would be
+// destroyed on the next per-cohort sync. Keeping series occurrences in their own table
+// leaves that path, and the Zoom recording webhook's cohort lookup, untouched.
+//
+// Splitting as headcount grows is an attachment move, not a migration: create a second
+// series, point the cohort's SessionSeriesCohort row at it, assign the other instructor.
+model SessionSeries {
+  id            String    @id @default(cuid())
+  title         String
+  kind          String    @default("CHECKIN") // CHECKIN | ONBOARDING
+  description   String?
+  status        String    @default("ACTIVE") // ACTIVE | PAUSED | ARCHIVED
+  zoomLink      String?
+  zoomMeetingId String?   @unique
+  days          String // CSV of SUN..SAT — same vocabulary as cohort_create's zoomDays
+  startTime     String // wall clock in `timezone`, e.g. "11:00 AM"
+  endTime       String
+  timezone      String    @default("America/Los_Angeles")
+  startDate     DateTime
+  // null = rolling. Zoom needs a bounded occurrence count, so the Zoom series is
+  // provisioned a horizon at a time and re-extended by the same job that rolls cohorts.
+  endDate       DateTime?
+  instructorId  String? // default lead; a per-occurrence instructor overrides it
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  instructor  User?                 @relation("SeriesInstructor", fields: [instructorId], references: [id], onDelete: SetNull)
+  cohorts     SessionSeriesCohort[]
+  occurrences SeriesOccurrence[]
+
+  @@index([status])
+}
+
+// Which cohorts a series serves. One row per (series, cohort) attachment.
+model SessionSeriesCohort {
+  seriesId  String
+  cohortId  String
+  createdAt DateTime @default(now())
+
+  series SessionSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  cohort Cohort        @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+
+  @@id([seriesId, cohortId])
+  @@index([cohortId])
+}
+
+model SeriesOccurrence {
+  id               String    @id @default(cuid())
+  seriesId         String
+  title            String
+  date             DateTime
+  startTime        String // UTC ISO, same convention as CohortSession
+  endTime          String
+  timezone         String    @default("America/Los_Angeles")
+  status           String    @default("upcoming") // upcoming | live | completed
+  meetingLink      String?
+  recordingLink    String?
+  zoomOccurrenceId String?
+  instructorId     String? // overrides SessionSeries.instructorId for this date
+  gcalEventId      String?
+  gcalSyncError    String?
+  gcalSyncedAt     DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  series     SessionSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  instructor User?         @relation("SeriesOccurrenceInstructor", fields: [instructorId], references: [id], onDelete: SetNull)
+
+  // Zoom's occurrence_id is the occurrence's start-time epoch and is NOT globally
+  // unique — same trap CohortSession hit. Scope it to the series.
+  @@unique([seriesId, zoomOccurrenceId])
+  @@index([seriesId, date])
+}
+
+model Resource {
+  id        String   @id @default(cuid())
+  sessionId String
+  title     String
+  type      String // pdf | video | link | document
+  url       String
+  createdAt DateTime @default(now())
+
+  session CohortSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+// ─── Instructor Participation & Outreach ──────────────────────────
+// Explicit cohort↔instructor record carrying confirmation state. Coexists with the
+// implicit "CohortInstructors" m2m (which stays the read source for public pages);
+// rows are kept in sync by syncCohortInstructors() in src/lib/instructorParticipation.ts.
+model CohortInstructor {
+  id            String    @id @default(cuid())
+  cohortId      String
+  instructorId  String
+  status        String    @default("PENDING") // PENDING | CONFIRMED | DECLINED
+  invitedAt     DateTime? // last outreach email sent
+  respondedAt   DateTime?
+  notes         String? // instructor free-text (availability caveats, decline reason)
+  responseToken String    @unique @default(cuid()) // tokenized no-login response link
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  cohort     Cohort @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  instructor User   @relation("CohortInstructorRecords", fields: [instructorId], references: [id], onDelete: Cascade)
+
+  sessionResponses CohortSessionInstructorResponse[]
+  outreachSends    InstructorOutreachSend[]
+  assignments      SessionAssignment[]
+  reminderSends    InstructorReminderSend[]
+
+  @@unique([cohortId, instructorId])
+  @@index([instructorId])
+  @@index([status])
+}
+
+model CohortSessionInstructorResponse {
+  id                 String   @id @default(cuid())
+  cohortInstructorId String
+  sessionId          String
+  availability       String   @default("UNKNOWN") // AVAILABLE | UNAVAILABLE | TENTATIVE | UNKNOWN
+  note               String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  cohortInstructor CohortInstructor @relation(fields: [cohortInstructorId], references: [id], onDelete: Cascade)
+  session          CohortSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([cohortInstructorId, sessionId])
+}
+
+// v2: the negotiation record for one instructor teaching one session. Supersedes
+// CohortSessionInstructorResponse (kept for v1 back-compat; backfilled into this).
+//
+// State machine — counter-offers never touch the real CohortSession until an admin
+// accepts, and Google Calendar sync fires only on CONFIRMED:
+//   PROPOSED ──accept──> ACCEPTED ──admin/auto──> CONFIRMED
+//   PROPOSED ──request change──> CHANGE_REQUESTED ──admin accepts──> (session moved) CONFIRMED
+//                                               └──admin counters──> COUNTERED ──> PROPOSED
+//   any ──> DECLINED
+model SessionAssignment {
+  id                 String    @id @default(cuid())
+  cohortInstructorId String
+  sessionId          String
+  status             String    @default("PROPOSED") // PROPOSED | ACCEPTED | CHANGE_REQUESTED | COUNTERED | DECLINED | CONFIRMED
+  note               String? // instructor free text
+  adminNote          String? // admin's counter/response text
+  proposedDate       DateTime? // instructor's requested alternative
+  proposedStartTime  String? // wall-clock in the session's timezone, e.g. "6:00 PM"
+  proposedEndTime    String?
+  respondedAt        DateTime?
+  confirmedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  cohortInstructor CohortInstructor @relation(fields: [cohortInstructorId], references: [id], onDelete: Cascade)
+  session          CohortSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([cohortInstructorId, sessionId])
+  @@index([status])
+  @@index([sessionId])
+}
+
+// Idempotency ledger for automated instructor mail (mirrors DripSend's unique-row
+// model). sessionId defaults to "" rather than null so the unique index actually
+// dedupes cohort-level nudges — SQLite treats NULLs as distinct.
+model InstructorReminderSend {
+  id                 String   @id @default(cuid())
+  cohortInstructorId String
+  kind               String // PROPOSAL_NUDGE_1 | PROPOSAL_NUDGE_2 | SESSION_T72 | SESSION_T24
+  sessionId          String   @default("")
+  status             String // SENT | FAILED | SKIPPED
+  error              String?
+  sentAt             DateTime @default(now())
+
+  cohortInstructor CohortInstructor @relation(fields: [cohortInstructorId], references: [id], onDelete: Cascade)
+
+  @@unique([cohortInstructorId, kind, sessionId])
+  @@index([kind])
+}
+
+// Per-cycle outreach email (DRAFT → APPROVED → SENT). Approval is the human gate;
+// sends are recorded in InstructorOutreachSend and deduped in code (24h window).
+model InstructorOutreach {
+  id         String    @id @default(cuid())
+  cohortId   String
+  subject    String
+  body       String // HTML fragment; merge tokens {{first_name}} {{cohort_title}} {{cohort_dates}} {{sessions_html}} {{respond_url}}
+  status     String    @default("DRAFT") // DRAFT | APPROVED | SENT
+  approvedAt DateTime?
+  sentAt     DateTime?
+  createdBy  String? // "mcp" | admin user id
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  cohort Cohort                   @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  sends  InstructorOutreachSend[]
+
+  @@index([cohortId])
+}
+
+model InstructorOutreachSend {
+  id                 String   @id @default(cuid())
+  outreachId         String
+  cohortInstructorId String
+  status             String // SENT | FAILED | SKIPPED
+  error              String?
+  sentAt             DateTime @default(now())
+
+  outreach         InstructorOutreach @relation(fields: [outreachId], references: [id], onDelete: Cascade)
+  cohortInstructor CohortInstructor   @relation(fields: [cohortInstructorId], references: [id], onDelete: Cascade)
+
+  @@index([outreachId])
+  @@index([cohortInstructorId])
+}
+
+model Enrollment {
+  id          String   @id @default(cuid())
+  userId      String
+  cohortId    String
+  source      String   @default("native") // native | luma | manual | stripe | free
+  status      String   @default("active") // active | completed | dropped
+  attribution String?  // JSON: first-touch UTM params + ad click ids at purchase
+  segment     String?  // onboarding segment/tag carried into checkout
+  createdAt   DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cohort Cohort @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, cohortId])
+}
+
+// ─── Payments (Stripe Checkout) ─────────────────────────────────────
+// One row per Stripe Checkout Session. The webhook is the source of truth:
+// `checkout.session.completed` marks a Payment `paid` and grants the seat;
+// `charge.refunded` marks it `refunded`. Amounts are stored in the smallest
+// currency unit (cents), matching Stripe's representation exactly.
+model Payment {
+  id                    String   @id @default(cuid())
+  userId                String?  // null while a guest Checkout Session is pending
+  cohortId              String?
+  groupId               String? // which seat tier they bought (nullable if group deleted)
+  venueEventId          String?
+  programId             String? // purchased program (nullable if program deleted)
+  buyerEmail            String? // normalized guest/login email used to reconcile the webhook
+  buyerName             String?
+  attribution           String? // JSON: first-touch UTM params + ad click ids at checkout
+  segment               String? // onboarding segment/tag at checkout
+  stripeSessionId       String?  @unique // Checkout Session id (cs_...); null for venue rental placeholders until the webhook reconciles the paid session
+  stripePaymentLinkId   String? // Payment Link id (plink_...) for venue rental links; reconciles link-created payments to their pending row
+  stripePaymentIntentId String?  @unique // PaymentIntent id (pi_...), set once payment succeeds
+  amount                Int // charged amount in cents
+  currency              String   @default("usd")
+  status                String   @default("pending") // pending | paid | failed | refunded
+  expiresAt             DateTime? // pending seat reservation expiry
+  checkoutUrl           String? // Stripe-hosted session URL; replaced by the after_expiration recovery URL once the session expires
+  recoveredAt           DateTime? // set when a previously-expired checkout is completed via Stripe's recovery flow
+  couponCode            String? // hub Coupon.code pre-applied at checkout (denormalized for reporting)
+  accountSetupSentAt    DateTime? // prevents duplicate setup email on webhook retries
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  user       User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  cohort     Cohort?     @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  group      Group?      @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  venueEvent VenueEvent? @relation(fields: [venueEventId], references: [id], onDelete: SetNull)
+  program    Program?    @relation(fields: [programId], references: [id], onDelete: SetNull)
+  redemption Redemption?
+
+  @@index([userId])
+  @@index([buyerEmail])
+  @@index([cohortId])
+  @@index([venueEventId])
+  @@index([programId])
+  @@index([stripePaymentLinkId])
+  @@index([status])
+}
+
+// Recurring membership subscription — entitlement to member-only content.
+// Mirrors Payment: created `pending` at checkout, and
+// the signature-verified Stripe webhook is the ONLY path that activates it.
+model Membership {
+  id                   String    @id @default(cuid())
+  userId               String? // null while a guest subscription Checkout is pending
+  buyerEmail           String? // normalized email used to reconcile the webhook
+  buyerName            String?
+  attribution          String? // JSON: first-touch UTM params + ad click ids at checkout
+  segment              String? // onboarding segment/tag at checkout
+  stripeSessionId      String    @unique // Checkout Session id (cs_...)
+  stripeSubscriptionId String?   @unique // Subscription id (sub_...), set once active
+  stripeCustomerId     String? // Stripe Customer id
+  amount               Int // recurring amount in cents (for example, 5000 = $50/mo)
+  currency             String    @default("usd")
+  tier                 String    @default("MENTOR_NETWORK") // MENTOR_NETWORK | ACCELERATOR
+  status               String    @default("pending") // pending | active | past_due | canceled | expired
+  currentPeriodEnd     DateTime? // when the current paid period ends
+  expiresAt            DateTime? // pending-checkout TTL, mirrors Payment.expiresAt
+  checkoutUrl          String? // Stripe-hosted session URL for recovery emails
+  couponCode           String? // hub Coupon.code pre-applied at checkout
+  accountSetupSentAt   DateTime? // prevents duplicate setup email on webhook retries
+  welcomeSentAt        DateTime? // prevents duplicate membership welcome email on webhook retries
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user       User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  redemption Redemption?
+
+  @@index([userId])
+  @@index([buyerEmail])
+  @@index([status])
+}
+
+// ── Coupons & referrals ─────────────────────────────────────────────────────
+// Hub-side source of truth for discounts, mirrored to Stripe (Coupon +
+// Promotion Code created on activation, ids stored here). Stripe does the
+// price math at checkout; the hub owns applicability, redemption tracking,
+// and (for AFFILIATE codes) ownership + commission ledger. One code per
+// payment is enforced by Redemption.paymentId being unique.
+model Coupon {
+  id                    String    @id @default(cuid())
+  code                  String    @unique // stored UPPERCASE, alnum + dashes
+  kind                  String // MANUAL | CAMPAIGN | AFFILIATE
+  percentOff            Int? // exactly one of percentOff/amountOff is set
+  amountOff             Int? // cents
+  appliesTo             String    @default("all") // all | cohort | membership
+  cohortId              String? // optional narrowing to a single cohort
+  maxRedemptions        Int?
+  expiresAt             DateTime?
+  active                Boolean   @default(true)
+  ownerUserId           String? // affiliate owner (ambassador program)
+  commissionPercent     Int? // % of the paid amount owed to the owner; null for non-affiliate
+  stripeCouponId        String?   @unique
+  stripePromotionCodeId String?   @unique
+  note                  String? // INTERNAL ONLY — why this code exists
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  owner       User?        @relation("CouponOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  redemptions Redemption[]
+
+  @@index([ownerUserId])
+  @@index([kind, active])
+}
+
+// One row per completed checkout that used a coupon. Written by the Stripe
+// webhook (the source of truth for money) from the session's discount totals.
+model Redemption {
+  id               String   @id @default(cuid())
+  couponId         String
+  paymentId        String?  @unique // one code per payment
+  membershipId     String?  @unique
+  buyerEmail       String
+  amountOff        Int // cents actually discounted, from Stripe's totals
+  commission       Int? // cents owed to the coupon owner (affiliate)
+  commissionStatus String? // pending | approved | paid_out | voided
+  createdAt        DateTime @default(now())
+
+  coupon     Coupon      @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  payment    Payment?    @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  membership Membership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+
+  @@index([couponId])
+  @@index([buyerEmail])
+}
+
+// ── Members area (Accelerator) ──────────────────────────────────────────────
+// Pods are accountability groups of 4-6 Accelerator members; each maps to a
+// private RocketChat group. Membership entitlements live in src/lib/entitlements.ts.
+
+model Pod {
+  id                String   @id @default(cuid())
+  name              String
+  slug              String   @unique
+  status            String   @default("forming") // forming | active | archived
+  capacity          Int      @default(6)
+  cohortId          String? // optional: the cohort this pod's members graduated from
+  rocketchatGroupId String?  @unique
+  coachId           String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  coach   User?       @relation("PodCoach", fields: [coachId], references: [id], onDelete: SetNull)
+  cohort  Cohort?     @relation(fields: [cohortId], references: [id], onDelete: SetNull)
+  members PodMember[]
+  events  MemberEvent[]
+
+  @@index([status])
+}
+
+model PodMember {
+  id       String    @id @default(cuid())
+  podId    String
+  userId   String
+  role     String    @default("member") // member | lead
+  joinedAt DateTime  @default(now())
+  leftAt   DateTime? // set instead of deleting, so pod history survives
+
+  pod  Pod  @relation(fields: [podId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([podId, userId])
+  @@index([userId])
+}
+
+// The Milestone Ladder — seeded rungs (prisma/seed.ts); achievements are
+// self-reported (pending) then verified by a coach/admin.
+model Milestone {
+  id          String @id @default(cuid())
+  key         String @unique // first-conversation | first-pilot | first-testimonial | first-retainer | mrr-5k | mrr-10k
+  title       String
+  description String?
+  order       Int
+
+  achievements MilestoneAchievement[]
+}
+
+model MilestoneAchievement {
+  id           String   @id @default(cuid())
+  userId       String
+  milestoneId  String
+  achievedAt   DateTime @default(now())
+  evidenceUrl  String?
+  note         String?
+  status       String   @default("pending") // pending | verified
+  verifiedById String? // null = self-reported, awaiting verification
+
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  milestone  Milestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  verifiedBy User?     @relation("MilestoneVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, milestoneId])
+  @@index([status])
+}
+
+// Member calls (weekly coaching, deal desk, monthly build sprint, weekly Q&A).
+// Shape mirrors CohortSession for UI reuse, but deliberately NOT that model —
+// CohortSession is cohort-scoped with Zoom-occurrence sync semantics.
+model MemberEvent {
+  id            String   @id @default(cuid())
+  type          String // COACHING | DEAL_DESK | BUILD_SPRINT | WEEKLY_QA
+  title         String
+  description   String?
+  date          DateTime
+  startTime     String // "18:00"
+  endTime       String // "19:00"
+  timezone      String   @default("PT")
+  meetingLink   String?
+  recordingLink String?
+  minTier       String   @default("MENTOR_NETWORK") // MENTOR_NETWORK | ACCELERATOR
+  podId         String? // pod-scoped call; null = all eligible members
+  status        String   @default("upcoming") // upcoming | live | completed | canceled
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  pod Pod? @relation(fields: [podId], references: [id], onDelete: SetNull)
+
+  @@index([date])
+  @@index([type])
+}
+
+// The member template/workflow library.
+model MemberResource {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  type        String // template | workflow | doc | video | link
+  url         String
+  category    String?
+  minTier     String   @default("ACCELERATOR") // MENTOR_NETWORK | ACCELERATOR
+  order       Int      @default(0)
+  published   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([published, minTier])
+}
+
+model Program {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  cover       String? // URL to cover image
+  status      String   @default("draft") // draft | open | archived | raw
+  locked      Boolean  @default(false)
+  priceCents  Int? // null = not sellable; one-time amount in cents via inline Stripe price_data
+  includesWeeklyCalls Boolean @default(false) // a later gate lets purchasers see WEEKLY_QA member events
+  // cohort (default) | direct | auth | public | member
+  // Access sources are ADDITIVE: a real grant (cohort enrollment, or a staff-issued
+  // ProgramAccess row) is honoured under cohort/direct/member, and accessMode only
+  // widens the audience on top of it — cohort ⊂ direct ⊂ member. So a course can be
+  // both a members product and a cohort's curriculum without locking either out.
+  // Only "public" and "auth" are self-enrollable — see SELF_ENROLL_MODES in
+  // src/lib/programAccess.ts. The rest require a real grant.
+  accessMode  String   @default("cohort")
+  memberMinTier String? // when accessMode = "member": minimum tier (MENTOR_NETWORK | ACCELERATOR); null = any active membership
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  modules     Module[]
+  cohorts     Cohort[]
+  rawCohort   Cohort?  @relation("CohortRawProgram") 
+  reviews     CourseReview[]
+  enrollments ProgramEnrollment[]
+  accessList  ProgramAccess[]
+  payments    Payment[]
+  materials   ProgramMaterial[]
+
+  @@unique([id, name])
+}
+
+model ProgramMaterial {
+  id        String   @id @default(cuid())
+  programId String
+  program   Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  title     String
+  type      String   // pdf | link | document
+  url       String
+  order     Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([programId])
+}
+
+model ProgramAccess {
+  id        String   @id @default(cuid())
+  programId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, userId])
+  @@index([programId])
+  @@index([userId])
+}
+
+model ProgramEnrollment {
+  id        String   @id @default(cuid())
+  userId    String
+  programId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, programId])
+}
+
+model Module {
+  id          String   @id @default(cuid())
+  programId   String
+  name        String
+  description String?
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  program     Program      @relation(fields: [programId], references: [id], onDelete: Cascade)
+  lessons     Lesson[]
+  assessments Assessment[]
+
+  @@unique([programId, name])
+}
+
+model Lesson {
+  id          String   @id @default(cuid())
+  moduleId    String
+  name        String
+  duration    Int      @default(0) // in seconds
+  type        String   @default("text") // text | video
+  text        String? // Long text with formatting
+  videoUrl    String? // Link to video or path to uploaded file
+  posterUrl   String? // Link to poster image or path to uploaded file
+  intro       String? // Brief introduction / description
+  timecodes   String? // Timecodes (e.g. "00:00 Intro\n01:30 Topic 1")
+  tags        String? // Comma-separated tags
+  order       Int      @default(0)
+  audioUrl    String?
+  captionsUrl String?
+  dataUrl     String?
+  zoomFileId  String?  @unique // Zoom recording ID to prevent duplicate uploads
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  module            Module             @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  progress          LessonProgress[]
+  quiz              Quiz?
+  videos            LessonVideo[]
+  learningPathItems LearningPathItem[]
+
+  @@unique([moduleId, name])
+}
+
+model LessonVideo {
+  id        String   @id @default(cuid())
+  lessonId  String
+  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  language  String   // ISO 639-1, e.g. "en", "ru"
+  videoUrl  String   // same bare-GCS-key convention as Lesson.videoUrl
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([lessonId, language])
+  @@index([lessonId])
+}
+
+model Quiz {
+  id          String   @id @default(cuid())
+  lessonId    String   @unique
+  name        String?
+  maxAttempts Int? // null = unlimited
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  lesson      Lesson           @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  items       QuizItem[]
+  submissions QuizSubmission[]
+}
+
+model QuizItem {
+  id           String   @id @default(cuid())
+  quizId       String
+  questionText String
+  type         String   @default("single_choice") // single_choice | multiple_choice | free_text
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  quiz    Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  options QuizOption[]
+  answers QuizAnswer[]
+}
+
+model QuizOption {
+  id        String  @id @default(cuid())
+  itemId    String
+  text      String
+  isCorrect Boolean @default(false)
+  order     Int     @default(0)
+
+  item       QuizItem             @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  selectedIn QuizSelectedOption[]
+}
+
+model QuizSubmission {
+  id            String   @id @default(cuid())
+  quizId        String
+  userId        String
+  attemptNumber Int      @default(1)
+  totalScore    Float?
+  status        String   @default("submitted") // submitted | graded
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  quiz    Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers QuizAnswer[]
+
+  @@unique([quizId, userId, attemptNumber])
+}
+
+model QuizAnswer {
+  id           String  @id @default(cuid())
+  submissionId String
+  itemId       String
+  textAnswer   String? // for free_text
+  points       Float?
+
+  submission      QuizSubmission       @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  item            QuizItem             @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  selectedOptions QuizSelectedOption[]
+}
+
+model QuizSelectedOption {
+  answerId String
+  optionId String
+
+  answer QuizAnswer @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  option QuizOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@id([answerId, optionId])
+}
+
+model Assessment {
+  id        String   @id @default(cuid())
+  moduleId  String
+  name      String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  module      Module                 @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  items       AssessmentItem[]
+  submissions AssessmentSubmission[]
+}
+
+model AssessmentItem {
+  id           String   @id @default(cuid())
+  assessmentId String
+  title        String?
+  questionText String
+  type         String   @default("single_choice") // multiple_choice | single_choice | free_text
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assessment Assessment         @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  options    AssessmentOption[]
+  answers    AssessmentAnswer[]
+}
+
+model AssessmentOption {
+  id        String  @id @default(cuid())
+  itemId    String
+  text      String
+  isCorrect Boolean @default(false)
+  order     Int     @default(0)
+
+  item       AssessmentItem   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  selectedIn SelectedOption[]
+}
+
+model AssessmentSubmission {
+  id           String   @id @default(cuid())
+  assessmentId String
+  userId       String
+  cohortId     String?
+  status       String   @default("submitted") // submitted | graded
+  totalScore   Float?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assessment Assessment         @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cohort     Cohort?            @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  answers    AssessmentAnswer[]
+}
+
+model AssessmentAnswer {
+  id           String  @id @default(cuid())
+  submissionId String
+  itemId       String
+  textAnswer   String? // For free_text
+  points       Float? // Points awarded for this answer
+
+  submission      AssessmentSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  item            AssessmentItem       @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  selectedOptions SelectedOption[]
+}
+
+model SelectedOption {
+  answerId String
+  optionId String
+
+  answer AssessmentAnswer @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  option AssessmentOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@id([answerId, optionId])
+}
+
+model LessonProgress {
+  id        String   @id @default(cuid())
+  userId    String
+  lessonId  String
+  cohortId  String?
+  createdAt DateTime @default(now())
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson  @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  cohort Cohort? @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId, cohortId])
+}
+
+model CourseReview {
+  id        String   @id @default(cuid())
+  userId    String
+  programId String
+  rating    Int // 1-5
+  text      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, programId])
+}
+
+model InstructorSlot {
+  id           String   @id @default(cuid())
+  groupId      String
+  instructorId String
+  date         DateTime
+  startTime    String // e.g. "10:00 AM"
+  endTime      String // e.g. "11:00 AM"
+  timezone     String   @default("UTC")
+  isBooked     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  group      Group            @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  instructor User             @relation("InstructorSlots", fields: [instructorId], references: [id], onDelete: Cascade)
+  booking    OneOnOneBooking?
+
+  @@index([groupId])
+  @@index([instructorId])
+}
+
+model OneOnOneBooking {
+  id             String   @id @default(cuid())
+  slotId         String   @unique
+  studentId      String
+  instructorId   String
+  groupId        String
+  status         String   @default("PENDING") // PENDING | APPROVED | REJECTED | CANCELLED
+  meetingLink    String?
+  studentNote    String?
+  instructorNote String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  slot       InstructorSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  student    User           @relation("StudentBookings", fields: [studentId], references: [id], onDelete: Cascade)
+  instructor User           @relation("InstructorBookings", fields: [instructorId], references: [id], onDelete: Cascade)
+  group      Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+  @@index([instructorId])
+  @@index([groupId])
+}
+
+model MediaFolder {
+  id        String   @id @default(cuid())
+  name      String
+  parentId  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent   MediaFolder?  @relation("SubFolders", fields: [parentId], references: [id], onDelete: Cascade)
+  children MediaFolder[] @relation("SubFolders")
+  media    Media[]
+}
+
+model Media {
+  id           String   @id @default(cuid())
+  name         String
+  url          String
+  type         String // image | video | document | other
+  size         Int? // bytes
+  folderId     String?
+  downloadable Boolean  @default(false)
+  description  String?
+  thumbnailUrl String?  // URL to preview PNG (for PDFs generated server-side)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  folder           MediaFolder?      @relation(fields: [folderId], references: [id], onDelete: SetNull)
+}
+
+
+// ─── Onboarding Models ──────────────────────────────────────────────────────
+model OnboardingForm {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  title           String
+  description     String?
+  ghlFieldMapping String? // JSON: { firstName?, lastName?, contactName?, phone?, email? } element ids
+  aiPrompt        String?
+  // Navigation is intentionally separate from tags. One single-choice element
+  // may determine the destination; the form URL is used when it has no URL.
+  routingElementId   String?
+  defaultRedirectUrl String?
+  createdAt          DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  steps          OnboardingStep[]
+  routingElement OnboardingElement?    @relation("OnboardingRoutingElement", fields: [routingElementId], references: [id], onDelete: SetNull)
+  tagMappings    OnboardingTagCohort[]
+  responses      OnboardingResponse[]
+}
+
+model OnboardingStep {
+  id     String @id @default(cuid())
+  formId String
+  title  String
+  slug   String?
+  order  Int    @default(0)
+
+  form            OnboardingForm      @relation(fields: [formId], references: [id], onDelete: Cascade)
+  elements        OnboardingElement[]
+  incomingOptions OnboardingOption[]  @relation("OptionNextStep")
+
+  @@unique([formId, slug])
+}
+
+model OnboardingElement {
+  id       String  @id @default(cuid())
+  stepId   String
+  type     String // multiple_choice | single_choice | text_single | text_multi | phone
+  label    String
+  required Boolean @default(false)
+  order    Int     @default(0)
+
+  step            OnboardingStep   @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  routingForForms OnboardingForm[] @relation("OnboardingRoutingElement")
+  options         OnboardingOption[]
+}
+
+model OnboardingOption {
+  id         String  @id @default(cuid())
+  elementId  String
+  text       String
+  tag        String  @default("")
+  order      Int     @default(0)
+  nextStepId String?
+  redirectUrl String?
+
+  element  OnboardingElement @relation(fields: [elementId], references: [id], onDelete: Cascade)
+  nextStep OnboardingStep?   @relation("OptionNextStep", fields: [nextStepId], references: [id], onDelete: SetNull)
+}
+
+model OnboardingTagCohort {
+  id       String  @id @default(cuid())
+  formId   String
+  tag      String
+  // Legacy data retained for compatibility and the admin import tool. Explicit
+  // answer routing uses OnboardingForm.routingElementId + option.redirectUrl.
+  cohortId String?
+  url      String?
+
+  form   OnboardingForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  cohort Cohort?        @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+
+  @@unique([formId, tag])
+}
+
+model OnboardingResponse {
+  id        String   @id @default(cuid())
+  formId    String
+  answers   String // JSON: { elementId: string | string[] }
+  tagCounts String // JSON: { tag: count }
+  cohortId  String?
+  status    String   @default("COMPLETED") // "PROCESSING" | "COMPLETED"
+  aiResult  String?
+  attribution String? // JSON: captured UTM params + ad click ids (marketing source)
+  createdAt DateTime @default(now())
+
+  form   OnboardingForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  cohort Cohort?        @relation(fields: [cohortId], references: [id], onDelete: SetNull)
+}
+
+// ─── Jobs ──────────────────────────────────────────────────────────────────
+model DuplicateJob {
+  id        String   @id @default(cuid())
+  type      String   // "lesson" | "module" | "course"
+  status    String   @default("pending") // "pending" | "running" | "done" | "failed"
+  progress  Int      @default(0)         // 0-100
+  message   String?
+  error     String?
+  resultId  String?
+  resultUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Learning Path Models ──────────────────────────────────────────
+model LearningPath {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  
+  cohortId    String
+  cohort      Cohort   @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  
+  order       Int      @default(0)
+
+  items       LearningPathItem[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([cohortId])
+}
+
+model LearningPathItem {
+  id             String       @id @default(cuid())
+  
+  learningPathId String
+  learningPath   LearningPath @relation(fields: [learningPathId], references: [id], onDelete: Cascade)
+  
+  lessonId       String
+  lesson         Lesson       @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  
+  order          Int          @default(0)
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([learningPathId, lessonId])
+  @@index([learningPathId])
+  @@index([lessonId])
+}
+
+
+// ─── Mind Health Config ────────────────────────────────────────────
+// Singleton row: stores which date's mind-health exercise is currently
+// shown to students and unauthenticated visitors.
+model MindHealthConfig {
+  id          Int      @id @default(1) // always 1
+  currentDate String   // ISO date string, e.g. "2026-06-09"
+  updatedAt   DateTime @updatedAt
+  updatedById String?  // who last changed it (ADMIN/INSTRUCTOR user id)
+
+  @@map("mind_health_config")
+}
+
+
+
+model Contact {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  phone     String?
+  birthday   String? // ISO YYYY-MM-DD date-only string; timezone-safe
+  userId     String?
+  linkSource String? // "auto_email" | "auto_phone" | "manual"
+
+  // Internal lead pipeline (replaces external CRM for now)
+  status         String    @default("NEW") // NEW | CONTACTED | QUALIFIED | WON | LOST
+  excludeFromPipeline Boolean @default(false)
+  source         String? // where the lead came from, e.g. "onboarding:ai-path", "asset_download", "manual"
+  attribution    String? // JSON: first-touch UTM params + ad click ids
+  tags           String? // JSON string[]: qualifiers (e.g. quiz tags like goal-agency, fit-evening)
+  notes          String? // free-form internal notes
+  lastActivityAt DateTime?
+
+  // Cached AI brief for the lead profile (JSON: summary / engagement / nextAction).
+  // Generated on demand only — never on page load, which would put an LLM call and
+  // its cost in the path of simply opening a record.
+  aiBrief   String?
+  aiBriefAt DateTime?
+
+  // Drip / outreach email consent, two scopes (see src/lib/drip/emailScope.ts).
+  // A non-null unsubscribedAt is the MARKETING opt-out: it suppresses nurture,
+  // broadcast and outreach mail. courseEmailOptOutAt is the COURSE opt-out: it
+  // suppresses course updates (cohort reminders, cohort messages, certificate
+  // notices). Neither affects transactional mail (receipts, password resets).
+  // The token is the one-click link secret for both scopes.
+  unsubscribedAt      DateTime?
+  courseEmailOptOutAt DateTime?
+  unsubscribeToken    String?   @unique
+  publicToken         String?   @unique // lazily minted for public booking links
+  /// When the student last dismissed the cohort-page "get updates" banner; it
+  /// stays hidden for 7 days after this.
+  cohortBannerDismissedAt DateTime?
+
+  /// Consent to phone calls only, including calls placed by an automated/AI assistant.
+  phoneConsentAt            DateTime?
+  smsMarketingConsentAt     DateTime?
+  smsTransactionalConsentAt DateTime?
+  /// `doNotCall` blocks automated calls. `smsOptOutAt` blocks all SMS, is set by
+  /// inbound STOP, and is cleared by inbound START.
+  doNotCall   Boolean   @default(false)
+  smsOptOutAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events          ContactEvent[]
+  dripEnrollments DripEnrollment[]
+  emailEvents     EmailEvent[]
+  dripSends       DripSend[]
+  contactNotes    ContactNote[]
+  calls           ContactCall[]
+  messages        ContactMessage[]
+  venueEvents     VenueEvent[]
+  venueEventRegistrations VenueEventRegistration[]
+  bookings        LeadBooking[]
+
+  @@index([status])
+  @@index([unsubscribedAt])
+  @@index([userId])
+}
+
+model CloserSlot {
+  id        String   @id @default(cuid())
+  closerId  String
+  startAt   DateTime
+  endAt     DateTime
+  timezone  String
+  createdAt DateTime @default(now())
+
+  booking LeadBooking?
+  closer  User         @relation(fields: [closerId], references: [id], onDelete: Cascade)
+
+  @@index([closerId, startAt])
+}
+
+model LeadBooking {
+  id            String   @id @default(cuid())
+  slotId        String   @unique
+  contactId     String
+  status        String   @default("CONFIRMED") // CONFIRMED | CANCELLED
+  zoomMeetingId String?
+  zoomJoinUrl   String?
+  gcalEventId   String?
+  gcalSyncError String?
+  cancelToken   String   @unique @default(cuid())
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  slot    CloserSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  contact Contact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, createdAt])
+}
+
+model ContactEvent {
+  id        String   @id @default(cuid())
+  contactId String
+  
+  type                 String  // "ASSET_DOWNLOAD" | "LESSON_VIEW" | "ONBOARDING" | "NEWSLETTER_SUBSCRIBE" | "VENUE_EVENT_REGISTER" | "MANUAL"
+  onboardingResponseId String? @unique // idempotency key for onboarding → lead sync
+  
+  // JSON string: { mediaId, fileName } or { lessonId, courseName, lessonName }
+  metadata  String   
+  
+  // Temporary download access (ASSET_DOWNLOAD)
+  token     String?  @unique
+  expiresAt DateTime?
+
+  // UTM tags
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmContent  String?
+
+  createdAt DateTime @default(now())
+
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  
+  @@index([contactId])
+  @@index([token])
+}
+
+model VenueEvent {
+  id                      String   @id @default(cuid())
+  title                   String
+  slug                    String   @unique
+  type                    String   @default("OTHER") // NETWORKING | HACKATHON | WORKSHOP | MEETUP | INTERVIEW | PODCAST | PANEL | DEMO_DAY | KIDS_PROGRAM | MOVIE_CLUB | OTHER
+  description             String?
+  organizerName           String
+  orgName                 String?
+  contactEmail            String
+  contactPhone            String?
+  date                    DateTime
+  startTime               String // e.g. "10:00 AM"
+  endTime                 String // e.g. "12:00 PM"
+  timezone                String   @default("America/Los_Angeles")
+  expectedAttendees       Int?
+  capacity                Int?
+  status                  String   @default("PENDING") // PENDING | APPROVED | DECLINED | CANCELLED
+  dealType                String   @default("PAID_RENTAL") // PAID_RENTAL | BARTER | REVENUE_SHARE | FREE_PROMO | INTERNAL
+  // Future `dealStage` will map the venue booking-ledger statuses (quoted / deposit-paid / confirmed).
+  dealNote                String? // INTERNAL ONLY — never serialized publicly
+  adminNote               String? // INTERNAL ONLY
+  quoteAmountCents        Int? // INTERNAL ONLY
+  quoteNote               String? // INTERNAL ONLY
+  rentalFeeCents          Int? // INTERNAL ONLY
+  rentalDepositCents      Int? // INTERNAL ONLY
+  rentalPaymentLinkId     String? // INTERNAL ONLY
+  rentalPaymentUrl        String? // INTERNAL ONLY
+  rentalPaymentStatus     String? // pending | paid | refunded — denormalized from Payment for drawer display
+  cover                   String?
+  externalRegistrationUrl String?
+  ticketPriceCents        Int?
+  ticketPaymentLink       String?
+  // ─── Public landing-page content ─────────────────────────────────
+  // SQLite has no scalar lists, so the multi-value fields are JSON strings —
+  // same convention as ContentPage.videos/faq/sections. Never read them raw:
+  // everything goes through src/lib/venueEventContent.ts, which returns [] on
+  // malformed JSON so a hand-edited row can't render [object Object] publicly.
+  endDate                 DateTime? // multi-day events; null = single-day. Same date-only UTC-midnight convention as `date`.
+  subtitle                String? // one-line lede under the title
+  videoUrl                String? // canonical video (YouTube watch/youtu.be/shorts/embed URL)
+  priceNote               String? // free text under the price, e.g. "Early bird until Aug 31"
+  gallery                 String? // JSON: [{ url, alt?, caption? }]
+  agenda                  String? // JSON: [{ date?, label?, startTime?, endTime?, title, note?, isPublic? }]
+  hosts                   String? // JSON: [{ name, role?, bio?, photoUrl?, profileSlug?, links? }]
+  pricingTiers            String? // JSON: [{ label, priceCents, note?, url?, availableUntil?, soldOut? }]
+  faq                     String? // JSON: [{ q, a }]
+  isOnline                Boolean  @default(false) // true = Zoom-only, skips the in-person waiver checkbox
+  source                  String   @default("FORM") // FORM | MCP | ADMIN
+  gcalEventId             String?
+  gcalSyncError           String?
+  gcalSyncedAt            DateTime?
+  contactId               String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  contact       Contact?                 @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  registrations VenueEventRegistration[]
+  agreements    VenueAgreement[]
+  payments      Payment[]
+
+  @@index([date])
+  @@index([status])
+  @@index([status, date])
+}
+
+model VenueEventRegistration {
+  id                String   @id @default(cuid())
+  venueEventId      String
+  contactId         String?
+  name              String
+  email             String
+  phone             String?
+  status            String   @default("CONFIRMED") // CONFIRMED | PENDING_PAYMENT | CANCELLED
+  waiverAcceptedAt  DateTime?
+  waiverVersion     String?
+  ip                String?
+  userAgent         String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  venueEvent VenueEvent @relation(fields: [venueEventId], references: [id], onDelete: Cascade)
+  contact    Contact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@unique([venueEventId, email])
+  @@index([venueEventId])
+}
+
+model VenueAgreement {
+  id             String   @id @default(cuid())
+  venueEventId String
+  templateKey    String // paid-rental | free-barter | revenue-share
+  contentMd      String
+  token          String   @unique
+  status         String   @default("DRAFT") // DRAFT | SENT | SIGNED | VOID
+  signerName     String?
+  signerEmail    String?
+  signerTitle    String?
+  signatureText  String?
+  signatureSvg   String?
+  signedAt       DateTime?
+  aisaSignedAt   DateTime?
+  aisaSignerName String?
+  aisaSignerTitle String?
+  signerIp       String?
+  userAgent      String?
+  sentAt         DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  venueEvent VenueEvent @relation(fields: [venueEventId], references: [id], onDelete: Cascade)
+
+  @@index([venueEventId])
+}
+
+// ─── Certificates ──────────────────────────────────────────────────
+
+model CertificateTemplate {
+  id            String        @id @default(cuid())
+  name          String
+  layout        String        @default("default") // Identifier for the React component template to use
+  backgroundUrl String?       // Optional base background image from GCS
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  certificates  Certificate[]
+}
+
+model Certificate {
+  id          String   @id // Custom format: XXXX-XXXX-XXXX
+  userId      String
+  cohortId    String
+  templateId  String
+  pdfUrl      String?  
+  pngUrl      String?
+  issuedAt    DateTime @default(now())
+  notifiedAt  DateTime?
+  isRevoked   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cohort      Cohort              @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  template    CertificateTemplate @relation(fields: [templateId], references: [id])
+
+  @@index([userId])
+  @@index([cohortId])
+  @@unique([userId, cohortId]) // Prevents duplicate certificates for the same cohort
+}
+// ─── Content Platform (blog posts + landing pages) ─────────────────
+// See website/blog-agent/CMS-PLAN.md. SQLite → no enums (String + // comments),
+// JSON stored as String. Source of truth for AI-generated static content.
+model ContentPage {
+  id     String @id @default(cuid())
+  type   String // BLOG | LANDING
+  slug   String @unique // "how-to-learn-ai" | "ai-bootcamp-san-francisco"
+  url    String @unique // "/blog/how-to-learn-ai/" | "/ai-bootcamp-san-francisco/"
+  status String @default("DRAFT") // DRAFT | GENERATING | READY_FOR_REVIEW | IN_REVIEW | PUBLISHED | DISABLED | ARCHIVED
+
+  // Roadmap / SEO (from the CSV — shared by both types)
+  priority          String? // P1..P3
+  funnelStage       String // Awareness | Consideration | Conversion
+  segment           String? // beginners | professionals | founders | ...
+  primaryKeyword    String
+  secondaryKeywords String?
+  metaTitle         String
+  metaDescription   String
+  h1                String
+  sectionsPlan      String? // CSV "Recommended H2 / Sections"
+  schemaTypes       String  @default("Article; FAQPage") // "Article; FAQPage" | "Course; LocalBusiness; FAQPage"
+  template          String  @default("default") // render template id (currently only "default")
+  indexable         Boolean @default(true) // index vs noindex (paid-only LPs)
+  guardrails        String? // CSV Notes — honored at review; blocks publish until acknowledged
+
+  // Generated content (JSON strings the generator turns into HTML)
+  answerBlock     String? // 40–60w GEO/AEO extract
+  bodyHtml        String? // long-form (blog) — Tiptap-compatible
+  sections        String? // JSON: landing beats [{kind, heading, body, ...}]
+  faq             String? // JSON: [{q,a}]
+  sources         String? // JSON: [{title,url}] verified
+  videos          String? // JSON: [{title,youtubeId}]
+  ctas            String? // JSON: [{position,label,href,gaEvent,gaSection}]
+  ogImageUrl      String? // GCS 1200×630
+  inlineImages    String? // JSON: [{url,alt}]
+  wordCount       Int?
+  proofVariant    String? // which real proof to feature (LP)
+
+  // Ops / provenance
+  importBatchId   String?
+  agentRunId      String?
+  competitorNotes String?
+  reviewedById    String?
+  authorName      String   @default("Academy Team")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  publishedAt     DateTime?
+
+  @@index([type, status])
+}
+
+model ImportBatch {
+  id          String   @id @default(cuid())
+  type        String // BLOG | LANDING
+  source      String // filename / sheet name
+  rowCount    Int
+  createdRows Int      @default(0)
+  skippedRows Int      @default(0)
+  createdById String?
+  createdAt   DateTime @default(now())
+}
+
+// ─── Agent control plane (execution lives in the separate agents service) ─
+model Agent {
+  id             String     @id @default(cuid())
+  slug           String     @unique // "blog-writer" | "landing-generator"
+  name           String
+  description    String // "what it does" — shown on the card
+  status         String     @default("ENABLED") // ENABLED | PAUSED | DISABLED
+  triggerType    String     @default("manual") // manual | schedule
+  schedule       String? // cron, if scheduled
+  serviceSlug    String? // agent id on the agents service (from its /agents manifest)
+  maxDurationMin Int        @default(30) // stuck-detection threshold
+  settings       String? // JSON: agent-specific config (batch size, model, ...)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  runs           AgentRun[]
+
+  @@index([status])
+}
+
+model AgentRun {
+  id            String    @id @default(cuid())
+  agentId       String
+  agent         Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  status        String    @default("QUEUED") // QUEUED | RUNNING | SUCCESS | FAILED | CANCELLED | TIMED_OUT
+  triggeredBy   String? // user id | "schedule"
+  serviceRunId  String? // run id on the agents service (for logs/cancel)
+  ciPipelineId  String? // reserved (legacy CI path)
+  itemsProduced Int       @default(0)
+  costUsd       Float?
+  logTail       String? // last N lines / summary
+  error         String?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([agentId, createdAt])
+}
+
+model AiUsage {
+  id               String   @id @default(cuid())
+  feature          String // see src/lib/ai/features.ts
+  model            String
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  costUsd          Float    @default(0)
+  createdAt        DateTime @default(now())
+
+  @@index([feature, createdAt])
+  @@index([model, createdAt])
+}
+
+// Integrations registry — admin-managed secrets & config (see docs/features/INTEGRATIONS.md).
+// `secret` kind is AES-256-GCM encrypted at rest; `config` kind is plaintext (URLs/flags).
+model Secret {
+  id             String   @id @default(cuid())
+  key            String   @unique // e.g. "HUB_MCP_TOKEN", "OPENAI_API_KEY"
+  category       String   @default("other") // "llm" | "mcp" | "payments" | "comms" | "endpoints" | "other"
+  kind           String   @default("secret") // "secret" | "config"
+  valueEncrypted String? // secret kind: base64 ciphertext
+  iv             String? // GCM iv (base64)
+  authTag        String? // GCM auth tag (base64)
+  valuePlain     String? // config kind only
+  last4          String? // secret kind: last 4 chars for identification
+  description    String?
+  updatedBy      String? // User.id
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+
+  @@index([category])
+}
+
+// Audit trail for the integrations registry. Records WHAT changed and BY WHOM — never the value.
+model SecretAudit {
+  id        String   @id @default(cuid())
+  key       String
+  action    String // "create" | "update" | "delete"
+  actorId   String?
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+}
+
+// ─── Drip Campaigns (lead nurture) ─────────────────────────────────
+// Multi-step, scheduled outreach over the internal Leads CRM.
+// See docs/features/DRIP_CAMPAIGNS.md. sqlite ⇒ no enums / native JSON:
+// unions live in comments, list-shaped values are JSON strings.
+
+model DripCampaign {
+  id          String  @id @default(cuid())
+  slug        String  @unique // stable key used by seeds + auto-enroll
+  name        String
+  description String?
+
+  status String @default("DRAFT") // DRAFT | ACTIVE | PAUSED | ARCHIVED
+
+  // What starts the sequence. LEAD_SEGMENT = classic lead-nurture (segment rule
+  // below). COHORT_SCHEDULE = cohort pre-start reminders: enrollment is driven
+  // by cohort registration (paid Enrollment rows + free registrants), steps may
+  // anchor to the cohort's start instant, and the segment rule is ignored.
+  trigger String @default("LEAD_SEGMENT") // LEAD_SEGMENT | COHORT_SCHEDULE | BROADCAST | CERTIFICATE_ISSUED | COHORT_MESSAGE
+
+  // Audience rule. JSON DripSegment — see src/lib/drip/segment.ts:
+  // { sources?, statuses?, anyTags?, allTags?, noneTags?, minAgeHours?,
+  //   maxAgeDays?, inactiveForDays? }
+  segment String @default("{}")
+
+  // Enrollment behaviour
+  autoEnroll     Boolean @default(true)
+  exitOnStatuses String  @default("[\"WON\",\"LOST\"]") // JSON string[]: leaving = campaign exit
+  priority       Int     @default(100) // lower wins when a lead matches several campaigns
+
+  // Send window, evaluated in `timezone`. Steps due outside it are deferred,
+  // never dropped — nobody gets a 3am cold email.
+  timezone             String  @default("America/Los_Angeles")
+  sendWindowStartHour  Int     @default(8)  // inclusive, 0-23
+  sendWindowEndHour    Int     @default(18) // exclusive, 1-24
+  skipWeekends         Boolean @default(false)
+
+  // Staff inbox used by the "send test" button on each step. Test sends bypass
+  // enrollment, the send window and the DripSend ledger entirely — they never
+  // touch a real lead and are not counted as campaign sends.
+  testEmail String?
+
+  // Broadcast dispatch record. Null on every campaign that has never been sent;
+  // audienceSnapshot is the JSON counts recorded at send time.
+  sentAt           DateTime?
+  audienceSnapshot String?
+
+  // Cohort message (trigger COHORT_MESSAGE) fields; null on every other campaign.
+  // cohortId is the cohort the message was sent to. logisticsConfirmedAt records
+  // when the admin confirmed the message is a logistics update, not a promotion
+  // (course-scope mail reaches marketing-unsubscribed students). idempotencyKey
+  // makes a double-submitted send create one campaign, not two.
+  cohortId             String?
+  logisticsConfirmedAt DateTime?
+  idempotencyKey       String?   @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  steps       DripStep[]
+  enrollments DripEnrollment[]
+
+  @@index([status])
+  @@index([cohortId])
+}
+
+model DripStep {
+  id         String @id @default(cuid())
+  campaignId String
+  order      Int // 1-based position in the sequence
+
+  // Wait after the PREVIOUS step's send (or after enrollment, for order 1).
+  delayHours Int @default(24)
+
+  // Scheduling anchor. ENROLLMENT = classic delayHours semantics. COHORT_START
+  // (COHORT_SCHEDULE campaigns only) = due at cohortStart + offsetMinutes,
+  // where offsetMinutes is negative for "before start" (-1440 = T-1d).
+  anchor        String @default("ENROLLMENT") // ENROLLMENT | COHORT_START
+  offsetMinutes Int    @default(0)
+
+  channel String @default("EMAIL") // EMAIL | TASK | CALL | SMS (TASK = internal reminder; CALL = AI voice call via Vapi; SMS = plain-text text message)
+
+  subject  String
+  // HTML body fragment. Rendered into the branded shell by src/lib/drip/template.ts.
+  // Supports {{first_name}} {{name}} {{email}} {{cta}} {{unsubscribe_url}} tokens.
+  body     String
+  ctaLabel String?
+  ctaUrl   String?
+
+  // CALL channel only. Override the default Vapi assistant / opening line for
+  // this step; for CALL steps `subject` is just the internal step label.
+  callAssistantId  String?
+  callFirstMessage String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaign DripCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  sends    DripSend[]
+
+  @@unique([campaignId, order])
+  @@index([campaignId])
+}
+
+model DripEnrollment {
+  id         String @id @default(cuid())
+  campaignId String
+  contactId  String
+
+  // Cohort this enrollment is anchored to, for COHORT_SCHEDULE campaigns.
+  // Empty string (not NULL) for lead campaigns: Postgres treats NULLs as
+  // distinct in unique indexes, which would silently break the "never
+  // enrolled twice" guarantee below. Plain string, no FK — cohort deletion
+  // must not cascade away send history; stale rows just stop resolving.
+  cohortId String @default("")
+
+  status String @default("ACTIVE") // ACTIVE | COMPLETED | EXITED | PAUSED
+
+  // Position + schedule. lastStepOrder is what has actually been sent;
+  // nextRunAt is when the next step becomes due (null once finished).
+  lastStepOrder Int       @default(0)
+  nextRunAt     DateTime?
+
+  enrolledAt  DateTime  @default(now())
+  completedAt DateTime?
+  exitedAt    DateTime?
+  exitReason  String? // status_exit | unsubscribed | manual | segment_mismatch
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaign DripCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact  Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  sends    DripSend[]
+
+  // A lead is never enrolled twice in one campaign (per cohort, for
+  // COHORT_SCHEDULE campaigns — lead campaigns always carry cohortId "").
+  @@unique([campaignId, contactId, cohortId])
+  @@index([status, nextRunAt])
+  @@index([contactId])
+  @@index([cohortId])
+}
+
+model DripSend {
+  id           String @id @default(cuid())
+  enrollmentId String
+  stepId       String
+
+  // Denormalized from the enrollment so timeline and per-contact engagement reads
+  // don't need a two-hop join. Nullable only because rows predate the column.
+  contactId String?
+
+  status String // SENT | FAILED | SKIPPED
+  error  String?
+
+  subject String? // snapshot of what actually went out
+  sentAt  DateTime @default(now())
+
+  // First-touch engagement rollups, so campaign stats never scan EmailEvent.
+  // Opens are directional only (Apple MPP / image proxies inflate them, image
+  // blocking suppresses them) — firstClickedAt is the trustworthy signal.
+  openedAt       DateTime?
+  firstClickedAt DateTime?
+
+  enrollment DripEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  step       DripStep       @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  contact    Contact?       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  emailEvents EmailEvent[]
+  call        ContactCall?
+  message     ContactMessage?
+
+  @@unique([enrollmentId, stepId]) // idempotency: one send per step per enrollment
+  @@index([sentAt])
+  @@index([contactId])
+}
+
+/// One timestamped, attributed note on a lead — the CRM's notes journal.
+///
+/// This coexists with `Contact.notes` by design, and they are not the same thing:
+/// `Contact.notes` is a single free-form scratchpad blob (still edited from the
+/// leads table), while ContactNote is an append-only journal where every entry
+/// knows when it was written and by whom. Drip TASK-channel steps write here
+/// rather than appending machine-generated lines into the blob, which is what
+/// they used to do.
+model ContactNote {
+  id        String @id @default(cuid())
+  contactId String
+
+  body String
+
+  /// Staff User.id, or null for system/automation-generated notes.
+  authorId String?
+  /// Display name snapshot ("Lex", "Drip: Qualified → Close", "System"), so a
+  /// note still reads correctly after an account is renamed or removed.
+  authorLabel String
+
+  /// MANUAL | DRIP_TASK | SYSTEM
+  kind String @default("MANUAL")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, createdAt])
+}
+
+/// One phone call with a lead — AI-placed (Vapi), browser-placed (Twilio), or human-logged ("manual").
+///
+/// Rows are created at initiation (status INITIATED) and finalized asynchronously
+/// by the Vapi end-of-call-report webhook, which fills transcript / recording /
+/// analysis. Manual calls are logged post-hoc by staff from the lead profile.
+/// dripSendId links a call back to the drip step that placed it (null for
+/// one-off calls from the profile button or human-logged calls).
+model ContactCall {
+  id         String  @id @default(cuid())
+  contactId  String
+  dripSendId String? @unique
+
+  provider       String  @default("vapi") // vapi | manual | twilio
+  providerCallId String? @unique
+  direction      String  @default("OUTBOUND") // OUTBOUND | INBOUND
+
+  // INITIATED | RINGING | IN_PROGRESS | COMPLETED | NO_ANSWER | VOICEMAIL | FAILED | TRANSFERRED
+  status      String  @default("INITIATED")
+  outcome     String? // analysis slug: qualified | not_interested | callback | ...
+  endedReason String? // raw Vapi endedReason
+
+  durationSec   Int?
+  recordingUrl  String?
+  transcript    String?
+  summary       String?
+  analysis      String? // JSON: Vapi analysisPlan structuredData
+  assistantId   String?
+  phoneNumber   String? // E.164 actually dialed (snapshot)
+  transferredTo String? // number warm-transferred to, if any
+
+  // Staff who clicked "Call with AI" / logged the manual call; null for drip.
+  authorId    String?
+  authorLabel String?
+
+  startedAt DateTime?
+  endedAt   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  contact  Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  dripSend DripSend? @relation(fields: [dripSendId], references: [id], onDelete: SetNull)
+
+  @@index([contactId, createdAt])
+  @@index([status])
+}
+
+model ContactMessage {
+  id         String  @id @default(cuid())
+  contactId  String
+  dripSendId String? @unique
+
+  provider    String  @default("twilio")
+  providerSid String? @unique
+  direction   String  @default("OUTBOUND") // OUTBOUND | INBOUND
+  status      String  @default("QUEUED") // QUEUED | SENT | DELIVERED | FAILED | RECEIVED
+
+  body        String
+  fromNumber  String
+  toNumber    String
+  error       String?
+  authorId    String?
+  authorLabel String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contact  Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  dripSend DripSend? @relation(fields: [dripSendId], references: [id], onDelete: SetNull)
+
+  @@index([contactId, createdAt])
+}
+
+/// Provider-agnostic record of everything observable about an outbound email.
+///
+/// Our own pixel + click redirect write OPENED/CLICKED here today; if we ever move
+/// off raw SMTP to a provider (Resend/SES), its webhooks write DELIVERED/BOUNCED/
+/// COMPLAINED into the same table without a rebuild. Those three values are defined
+/// but never written today — raw SMTP gives us no delivery feedback at all.
+model EmailEvent {
+  id         String  @id @default(cuid())
+  contactId  String
+  dripSendId String? // null for transactional / future non-drip mail
+
+  // SENT | FAILED | OPENED | CLICKED | UNSUBSCRIBED | DELIVERED | BOUNCED | COMPLAINED
+  // (String, not enum — SQLite has no enum type; matches the rest of this schema.)
+  type String
+
+  url       String? // CLICKED only: the destination that was followed
+  subject   String? // snapshot, so a timeline row reads standalone
+  bodyHtml  String? // SENT rows only: the rendered fragment the recipient received
+  userAgent String?
+  ipHash    String? // salted sha256, truncated — a raw IP is never stored
+  source    String  @default("hub") // "hub" | future provider name
+  metadata  String? // JSON, matching the ContactEvent convention
+
+  createdAt DateTime @default(now())
+
+  contact  Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  dripSend DripSend? @relation(fields: [dripSendId], references: [id], onDelete: SetNull)
+
+  @@index([contactId, createdAt])
+  @@index([dripSendId, type])
+}

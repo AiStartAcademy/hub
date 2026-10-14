@@ -1,0 +1,226 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400..500;1,14..32,400..500&family=Space+Grotesk:wght@500;700&display=swap");
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@font-face {
+  font-family: "Dancing Script";
+  src: url("/fonts/DancingScript-SemiBold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@theme {
+  /* AiSA Brand Colors */
+  --color-primary: #56E9EB;
+  --color-primary-light: #00F5E9;
+  --color-primary-dark: #00B8B5;
+  --color-primary-active: #009DA0;
+  --color-accent: #720987;
+  --color-accent-deep: #3A0CA3;
+  --color-background: #F8F9FA;
+  --color-surface: #EEF1F6;
+  --color-background-dark: #1B1F3B;
+  --color-background-deeper: #11131D;
+  --color-card: #ffffff;
+  --color-card-dark: #23284A;
+  --color-border: #D9DEE8;
+  --color-border-dark: #2e3560;
+  --color-text-main: #11131D;
+  --color-text-secondary: #6C757D;
+  --color-text-muted: #9AA3B2;
+  /* Fonts */
+  --font-family-display: "Space Grotesk", system-ui, sans-serif;
+  --font-family-body: "Inter", system-ui, sans-serif;
+  --font-family-signature: "Dancing Script", "Snell Roundhand", "Savoye LET", "Brush Script MT", cursive;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-family-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-family-display);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(86, 233, 235, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(86, 233, 235, 0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out forwards;
+}
+
+.animate-slide-in {
+  animation: slide-in-left 0.4s ease-out forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.5s ease-out forwards;
+}
+
+.signature-script {
+  font-family: var(--font-family-signature);
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+.stagger-5 { animation-delay: 0.25s; }
+
+/* Tiptap specific styles to ensure lists and bullets are visible */
+.ProseMirror {
+  outline: none;
+}
+
+.ProseMirror ul {
+  list-style-type: disc !important;
+  padding-left: 1.5rem !important;
+  margin-top: 1rem !important;
+  margin-bottom: 1rem !important;
+}
+
+.ProseMirror ol {
+  list-style-type: decimal !important;
+  padding-left: 1.5rem !important;
+  margin-top: 1rem !important;
+  margin-bottom: 1rem !important;
+}
+
+.ProseMirror blockquote {
+  border-left: 4px solid #e2e8f0 !important;
+  padding-left: 1rem !important;
+  font-style: italic !important;
+  color: #64748b !important;
+  margin: 1.5rem 0 !important;
+}
+
+.dark .ProseMirror blockquote {
+  border-left-color: #334155 !important;
+  color: #94a3b8 !important;
+}
+
+.ProseMirror h1 {
+  font-size: 2.25rem !important;
+  font-weight: 800 !important;
+  line-height: 1.2 !important;
+  margin-top: 2rem !important;
+  margin-bottom: 1rem !important;
+}
+
+.ProseMirror h2 {
+  font-size: 1.5rem !important;
+  font-weight: 700 !important;
+  line-height: 1.3 !important;
+  margin-top: 1.5rem !important;
+  margin-bottom: 0.75rem !important;
+}
+
+.ProseMirror code {
+  background-color: #f1f5f9 !important;
+  color: #ef4444 !important;
+  padding: 0.2rem 0.4rem !important;
+  border-radius: 0.25rem !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+  font-size: 0.875em !important;
+}
+
+.dark .ProseMirror code {
+  background-color: #1e293b !important;
+  color: #f87171 !important;
+}
+
+.ProseMirror pre {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  padding: 1rem !important;
+  border-radius: 0.5rem !important;
+  margin: 1rem 0 !important;
+  overflow-x: auto !important;
+}
+
+.ProseMir.prose video,
+.prose div[data-type="video-container"] video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 1.5rem;
+  overflow: hidden;
+  box-shadow: var(--shadow-xl);
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+  background-color: black;
+}
+
+.ProseMirror pre code {
+  background-color: transparent !important;
+  color: inherit !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #94a3b8;
+  pointer-events: none;
+  height: 0;
+}

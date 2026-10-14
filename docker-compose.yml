@@ -1,0 +1,39 @@
+# Production self-hosting example.
+# Start the app: docker compose up -d --build
+# Enable HTTPS via Caddy: HUB_DOMAIN=hub.example.com docker compose --profile proxy up -d
+# Host port defaults to 3000 (bound to 127.0.0.1); override with HUB_PORT.
+
+services:
+  hub-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: file:/app/data/hub.db
+    ports:
+      - "127.0.0.1:${HUB_PORT:-3000}:3000"
+    volumes:
+      - hub_data:/app/data
+      # Mount the entrypoint so compose also works with images that don't bake start.sh in.
+      - ./start.sh:/app/start.sh:ro
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["proxy"]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    command: caddy reverse-proxy --from ${HUB_DOMAIN:-localhost} --to hub-app:3000
+
+volumes:
+  hub_data:
+  caddy_data:
+  caddy_config:

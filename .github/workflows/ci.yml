@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: file:./ci.db
+      AUTH_SECRET: ci-only-not-a-secret
+      NEXTAUTH_SECRET: ci-only-not-a-secret
+      NEXTAUTH_URL: http://localhost:3000
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: oven-sh/setup-bun@v2
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npm run db:push -- --skip-generate
+      - run: npx tsc --noEmit
+      - run: bun test tests/unit
+      - run: npm run build

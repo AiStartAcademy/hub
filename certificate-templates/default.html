@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1200, height=1553, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Caveat&display=swap" rel="stylesheet">
+    <style>
+        /* CSS reset and base setup */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            width: 1200px;
+            height: 1553px;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: #ffffff;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* Decorative borders */
+        .border-left {
+            position: absolute;
+            top: 0; left: 0; bottom: 0;
+            width: 14px;
+            background-color: #2c3e50;
+        }
+        .border-right {
+            position: absolute;
+            top: 0; right: 0; bottom: 0;
+            width: 14px;
+            background-color: #00c6ff;
+        }
+
+        /* Background glow effect */
+        .bg-glow {
+            position: absolute;
+            bottom: -50px;
+            right: -200px;
+            width: 1000px;
+            height: 1000px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(235,248,255,1) 0%, rgba(255,255,255,0) 70%);
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* Container for content */
+        .content-container {
+            z-index: 10;
+            width: 100%;
+            height: 100%;
+            padding: 120px 100px 80px 100px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* Header / Logo */
+        .logo-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 80px;
+        }
+        .logo-icon { width: 60px; height: 60px; margin-bottom: 8px; }
+        .logo-title { font-size: 20px; font-weight: 700; color: #1e293b; letter-spacing: 2px; }
+        .logo-subtitle { font-size: 14px; color: #64748b; letter-spacing: 3px; text-transform: uppercase; }
+
+        /* Document Title */
+        .doc-title {
+            color: #1e293b;
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+        }
+        .doc-divider {
+            width: 200px;
+            height: 2px;
+            background-color: #94a3b8;
+            margin-bottom: 80px;
+        }
+
+        /* Student Name & Course */
+        .student-name {
+            font-size: 52px;
+            font-weight: 800;
+            color: #1e293b;
+            text-transform: uppercase;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .course-name {
+            font-size: 36px;
+            font-weight: 600;
+            color: #475569;
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        .course-subtitle {
+            font-size: 22px;
+            font-weight: 600;
+            color: #64748b;
+            text-align: center;
+            margin-bottom: 16px;
+        }
+        .course-desc {
+            font-size: 18px;
+            color: #64748b;
+            text-align: center;
+            max-width: 800px;
+            line-height: 1.5;
+            margin-bottom: 100px;
+        }
+
+        /* Competencies List */
+        .competencies-container {
+            width: 100%;
+            padding: 0 100px;
+            margin-bottom: auto; /* Pushes footer to the bottom */
+        }
+        .competencies-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1e293b;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .competencies-list {
+            list-style-type: none;
+            color: #64748b;
+            font-size: 18px;
+            line-height: 1.8;
+        }
+        .competencies-list li {
+            position: relative;
+            padding-left: 20px;
+        }
+        .competencies-list li::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #94a3b8;
+        }
+
+        /* Footer */
+        .footer-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            width: 100%;
+            padding: 0 40px;
+            margin-bottom: 60px;
+        }
+        .footer-details {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            color: #94a3b8;
+            font-size: 18px;
+            font-style: italic;
+        }
+        .footer-signature {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            text-align: right;
+        }
+        
+        /* Faking original handwritten signature style */
+        .signature-draw {
+            font-family: 'Caveat', cursive;
+            font-size: 50px;
+            line-height: 0.8;
+            color: #1e293b;
+            margin-right: 15px;
+            transform: rotate(-5deg);
+        }
+        .signature-text {
+            font-size: 20px;
+            font-style: italic;
+            color: #1e293b;
+            font-weight: 600;
+        }
+        .signature-title { font-size: 16px; color: #94a3b8; margin-top: 5px; }
+        .signature-academy { font-size: 16px; color: #94a3b8; font-style: italic; }
+
+        /* Bottom Disclaimer */
+        .disclaimer-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+        }
+        .website-link {
+            color: #94a3b8;
+            font-size: 16px;
+            margin-bottom: 12px;
+            letter-spacing: 1px;
+            text-decoration: none;
+        }
+        .legal-text {
+            color: #cbd5e1;
+            font-size: 12px;
+            text-align: center;
+            max-width: 800px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="border-left"></div>
+    <div class="border-right"></div>
+    <div class="bg-glow"></div>
+
+    <div class="content-container">
+        
+        <div class="logo-container">
+            <svg class="logo-icon" viewBox="0 0 24 24" fill="#00c6ff" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L2 22h20L12 2z" fill="#00c6ff"/>
+                <circle cx="12" cy="14" r="4" fill="#1e293b"/>
+            </svg>
+            <div class="logo-title">{{CERTIFICATE_LOGO_TEXT}}</div>
+            <div class="logo-subtitle">academy</div>
+        </div>
+
+        <div class="doc-title">CERTIFICATE OF COMPLETION</div>
+        <div class="doc-divider"></div>
+
+        <div class="student-name">{{STUDENT_NAME}}</div>
+        
+        <div class="course-name">{{COHORT_NAME}}</div>
+        <div class="course-subtitle">Foundations of AI Agent Systems, Cybersecurity & Automation Architecture</div>
+        {{CERTIFICATE_PROGRAM_DESCRIPTION_BLOCK}}
+
+        {{CERTIFICATE_COMPETENCIES_BLOCK_START}}
+        <div class="competencies-container">
+            <div class="competencies-title">Demonstrated Competencies</div>
+            <ul class="competencies-list">
+                {{CERTIFICATE_COMPETENCIES}}
+            </ul>
+        </div>
+        {{CERTIFICATE_COMPETENCIES_BLOCK_END}}
+
+        <div class="footer-container">
+            <div class="footer-details">
+                {{CERTIFICATE_LOCATION_BLOCK}}
+                <div>Program Dates: {{DATE}}</div>
+                <div>Certificate ID: {{CERT_ID}}</div>
+            </div>
+
+            <div class="footer-signature">
+                <div style="display: flex; align-items: baseline; justify-content: flex-end; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px; margin-bottom: 5px; min-width: 250px;">
+                    {{CERTIFICATE_SIGNATURE_TEXT}}
+                    <div class="signature-text">{{SIGNER_NAME}}</div>
+                </div>
+                <div class="signature-title">{{SIGNER_TITLE}}</div>
+                <div class="signature-academy">{{ACADEMY_NAME}}</div>
+            </div>
+        </div>
+
+        <div class="disclaimer-container">
+            <a href="{{SITE_URL}}" class="website-link">{{SITE_DOMAIN}}</a>
+            <div class="legal-text">This certificate is a recognition of course completion and does not constitute a state-sanctioned license or a legally regulated professional title.</div>
+        </div>
+
+    </div>
+
+</body>
+</html>

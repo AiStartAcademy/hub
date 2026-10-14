@@ -1,0 +1,5 @@
+dub-out/
+*.wav
+*.mp3
+*.srt
+work/

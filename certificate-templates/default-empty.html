@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1200, height=1553, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        /* Strict print settings for the PDF renderer */
+        @media print {
+            @page {
+                size: 12.5in 16.177in;
+                margin: 0;
+            }
+            html, body {
+                width: 1200px !important;
+                height: 1553px !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        html, body {
+            width: 1200px;
+            height: 1553px;
+            margin: 0;
+            padding: 0;
+            background-color: #ffffff;
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Fixed wrapper that the renderer cannot shrink */
+        .pdf-canvas {
+            position: relative;
+            width: 1200px !important;
+            min-width: 1200px !important;
+            max-width: 1200px !important;
+            height: 1553px !important;
+            min-height: 1553px !important;
+            max-height: 1553px !important;
+            overflow: hidden;
+            background-color: #ffffff;
+        }
+
+        /* Side gradient borders positioned against the PDF canvas */
+        .border-left {
+            position: absolute; top: 0; left: 0; bottom: 0; width: 14px;
+            background: linear-gradient(180deg, #111827 0%, #17385A 40%, #22D3EE 100%);
+            z-index: 20;
+        }
+        .border-right {
+            position: absolute; top: 0; right: 0; bottom: 0; width: 14px;
+            background: linear-gradient(180deg, #22D3EE 0%, #17385A 60%, #111827 100%);
+            z-index: 20;
+        }
+
+        /* Glow */
+        .bg-glow {
+            position: absolute;
+            bottom: -300px; right: -300px;
+            width: 1200px; height: 1200px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(240,250,255,0.8) 0%, rgba(255,255,255,0) 60%);
+            z-index: 1; pointer-events: none;
+        }
+
+        /* Main text container */
+        .content-container {
+            position: absolute;
+            top: 0; left: 0;
+            width: 1200px; height: 1553px;
+            padding: 100px 120px 60px 120px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            z-index: 10;
+        }
+
+        .logo-container { margin-bottom: 70px; }
+        .logo-img { width: 110px; height: auto; }
+
+        .doc-title {
+            color: #0f172a;
+            font-size: 26px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            margin-bottom: 15px;
+        }
+        .doc-divider {
+            width: 160px;
+            height: 2px;
+            background-color: #22d3ee;
+            margin-bottom: 80px;
+        }
+
+        .student-name {
+            font-size: 40px;
+            font-weight: 700;
+            color: #1e293b;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 25px;
+        }
+        .course-name {
+            font-size: 28px;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 12px;
+        }
+        .course-full-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 12px;
+        }
+        .course-desc {
+            font-size: 15px;
+            font-weight: 400;
+            color: #64748b;
+            max-width: 700px;
+            line-height: 1.6;
+            margin-bottom: 90px;
+        }
+
+        .competencies-container {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: auto;
+        }
+        .competencies-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1e293b;
+            letter-spacing: 1.5px;
+            margin-bottom: 25px;
+        }
+        .competencies-list {
+            list-style-type: none;
+            color: #64748b;
+            font-size: 15px;
+            font-weight: 400;
+            line-height: 1.8;
+            text-align: left;
+        }
+        .competencies-list li {
+            position: relative;
+            padding-left: 15px;
+        }
+        .competencies-list li::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #94a3b8;
+        }
+
+        .footer-container {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 60px;
+            text-align: left;
+        }
+        .footer-details {
+            color: #94a3b8;
+            font-size: 15px;
+            font-style: italic;
+            font-weight: 300;
+            line-height: 1.6;
+        }
+
+        .footer-signature {
+            display: flex;
+            align-items: flex-end;
+            gap: 15px;
+        }
+        .sig-image-box {
+            position: relative;
+            width: 140px;
+            height: 90px;
+        }
+        .sig-line {
+            position: absolute;
+            bottom: 16px; left: 0;
+            width: 100%;
+            border-bottom: 2px solid #cbd5e1;
+            z-index: 1;
+        }
+        .sig-img {
+            position: absolute;
+            bottom: 5px; left: 10px;
+            height: 100px;
+            width: auto;
+            z-index: 2;
+        }
+        
+        .sig-text-box {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            text-align: right;
+            padding-bottom: 6px;
+        }
+        .sig-name {
+            font-size: 26px;
+            font-weight: 500;
+            font-style: italic;
+            color: #0f172a;
+            margin-bottom: 2px;
+        }
+        .sig-title {
+            font-size: 18px;
+            font-weight: 400;
+            color: #64748b;
+            margin-bottom: 2px;
+        }
+        .sig-org {
+            font-size: 18px;
+            font-style: italic;
+            font-weight: 300;
+            color: #94a3b8;
+        }
+
+        .disclaimer-container { width: 100%; }
+        .website-link {
+            display: block;
+            color: #94a3b8;
+            font-size: 14px;
+            font-weight: 500;
+            text-decoration: none;
+            margin-bottom: 10px;
+        }
+        .legal-text {
+            color: #cbd5e1;
+            font-size: 10px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body>
+    <!-- This wrapper prevents Puppeteer from shrinking the page -->
+    <div class="pdf-canvas">
+        <div class="border-left"></div>
+        <div class="border-right"></div>
+        <div class="bg-glow"></div>
+
+        <div class="content-container">
+            <div class="logo-container">
+                {{CERTIFICATE_LOGO_IMAGE}}
+            </div>
+
+            <div class="doc-title">CERTIFICATE OF COMPLETION</div>
+            <div class="doc-divider"></div>
+
+            <div class="student-name">{{STUDENT_NAME}}</div>
+            
+            <div class="course-name">{{COHORT_NAME}}</div>
+            <div class="course-full-title">Foundations of AI Agent Systems, Cybersecurity & Automation Architecture</div>
+            {{CERTIFICATE_PROGRAM_DESCRIPTION_BLOCK}}
+
+            {{CERTIFICATE_COMPETENCIES_BLOCK_START}}
+            <div class="competencies-container">
+                <div class="competencies-title">DEMONSTRATED COMPETENCIES</div>
+                <ul class="competencies-list">
+                    {{CERTIFICATE_COMPETENCIES}}
+                </ul>
+            </div>
+            {{CERTIFICATE_COMPETENCIES_BLOCK_END}}
+
+            <div class="footer-container">
+                <div class="footer-details">
+                    {{CERTIFICATE_LOCATION_BLOCK}}
+                    <div>Program Dates: {{DATE}}</div>
+                    <div>Certificate ID: {{CERT_ID}}</div>
+                </div>
+
+                <div class="footer-signature">
+                    <div class="sig-image-box">
+                        <div class="sig-line"></div>
+                        {{CERTIFICATE_SIGNATURE_IMAGE}}
+                    </div>
+                    <div class="sig-text-box">
+                        <div class="sig-name">{{SIGNER_NAME}}</div>
+                        <div class="sig-title">{{SIGNER_TITLE}}</div>
+                        <div class="sig-org">{{ACADEMY_NAME}}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="disclaimer-container">
+                <a href="{{SITE_URL}}" class="website-link">{{SITE_DOMAIN}}</a>
+                <div class="legal-text">This certificate is a recognition of course completion and does not constitute a state-sanctioned license or a legally regulated professional title.</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

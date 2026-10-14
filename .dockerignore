@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+stitch
+stitch.zip
+assets
+*.md
+.dockerignore
+Dockerfile
+npm-debug.log*
+lms_db_data
+.gitlab-ci.yml
