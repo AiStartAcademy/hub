@@ -167,9 +167,10 @@ leads, author drip campaigns, manage memberships and run venue events. Writes th
 people see are previewed before they are committed.
 
 On the hub, set `HUB_MCP_TOKEN` to a dedicated random value, and set
-`HUB_MCP_WRITES_ENABLED=true` only when you want writes. A ready-made MCP server package for
-this API is coming soon from the same maintainers; until then, the endpoints are documented in
-[docs/MCP_API.md](./docs/MCP_API.md) and work with any HTTP client.
+`HUB_MCP_WRITES_ENABLED=true` only when you want writes. Then connect an assistant with
+[**hub-mcp**](https://github.com/AiStartAcademy/hub-mcp), the companion MCP server (40 tools,
+preview → confirm writes; build from source, npm package coming). Endpoint reference:
+[docs/MCP_API.md](./docs/MCP_API.md).
 
 ## Documentation
 

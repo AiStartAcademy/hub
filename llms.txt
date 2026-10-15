@@ -19,7 +19,7 @@ Rules for coding agents are in AGENTS.md. Academy-specific values live only in s
 - [Local development](docs/LOCAL_DEVELOPMENT.md): run on your machine with no external services
 - [Deployment](docs/DEPLOYMENT.md): Docker image, start script, persistent SQLite, webhooks, cron runners
 - [Security architecture](docs/SECURITY.md): authentication, authorization, machine tokens, webhook verification
-- [MCP API](docs/MCP_API.md): authenticated internal API under /api/internal/mcp/* for AI assistants
+- [MCP API](docs/MCP_API.md): authenticated internal API under /api/internal/mcp/* for AI assistants; client: https://github.com/AiStartAcademy/hub-mcp
 
 ## Features
 
